@@ -1,39 +1,50 @@
-/* app.js - sincronización IndexedDB <-> Firebase Firestore (lista para pegar)
-   - Mantiene IndexedDB (offline)
-   - Usa outbox para operaciones offline
-   - Sincroniza automáticamente cuando haya conexión
-   - Usa Auth Anónima de Firebase para identificar clientes
+/* app.js - Sincronización realtime IndexedDB <-> Firestore
+   - Offline-first: IndexedDB + outbox
+   - Sincronización automática al volver online
+   - Listener realtime para aplicar cambios remotos a IndexedDB
+   - Evita eco de cambios usando clientId (auth anon)
 */
 
-/* ---------------------------
-   CONFIG: pegar tu firebaseConfig aquí
-   (lo copiás desde Firebase console -> Project settings -> SDK config)
-   --------------------------- */
+/* ========== 1) FIREBASE CONFIG ========== */
+/*
+  Reemplazá este objeto con el firebaseConfig que te da Firebase Console.
+  Ejemplo:
+  const firebaseConfig = {
+    apiKey: "...",
+    authDomain: "project-id.firebaseapp.com",
+    projectId: "project-id",
+    storageBucket: "project-id.appspot.com",
+    messagingSenderId: "...",
+    appId: "1:...:web:..."
+  };
+*/
 const firebaseConfig = {
-  apiKey: "AIzaSyDnMeFztVPA0IoP2tABRgd8pD86qBqzWhg",
-  authDomain: "<<< tu-authDomain >>>",
-  projectId: "<<< tu-projectId >>>",
-  // ... otros keys que Firebase te da
+  // <<< PEGAR AQUÍ TU firebaseConfig >>>
 };
 
-/* =============================
-   Inicializar Firebase
-   ============================= */
-if (typeof firebase === "undefined") {
-  console.error("Firebase SDK no cargado. Asegurate de incluir los scripts en index.html");
+if (typeof firebase === 'undefined') {
+  console.error('Firebase SDK no cargado. Asegurate de incluir los scripts en index.html');
 } else {
   firebase.initializeApp(firebaseConfig);
-  // autenticación anónima para identificar clientes
-  firebase.auth().signInAnonymously()
-    .catch(err => console.warn("Auth anon falló:", err));
 }
 
-// referencia a Firestore (compat)
+// Firestore y Auth (compat)
 const firestore = firebase.firestore();
+const auth = firebase.auth();
 
-/* =============================
-   IndexedDB: trabajos + outbox
-   ============================= */
+let clientId = null; // uid del cliente (auth anon)
+
+/* Autenticación anónima */
+auth.onAuthStateChanged(user => {
+  if (user) {
+    clientId = user.uid;
+    console.log('Firebase auth OK - clientId:', clientId);
+  } else {
+    auth.signInAnonymously().catch(err => console.warn('Auth anon failed:', err));
+  }
+});
+
+/* ========== 2) INDEXEDDB (trabajos + outbox) ========== */
 const DB_NAME = 'registroDB_v3';
 const STORE_TRABAJOS = 'trabajos';
 const STORE_OUTBOX = 'outbox';
@@ -41,8 +52,8 @@ let db = null;
 
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open(DB_NAME, 2); // version 2: incluye outbox
-    r.onupgradeneeded = (e) => {
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = e => {
       const _db = e.target.result;
       if (!_db.objectStoreNames.contains(STORE_TRABAJOS)) {
         _db.createObjectStore(STORE_TRABAJOS, { keyPath: 'id', autoIncrement: true });
@@ -51,40 +62,34 @@ function openDB() {
         _db.createObjectStore(STORE_OUTBOX, { keyPath: 'oid', autoIncrement: true });
       }
     };
-    r.onsuccess = (e) => {
+    req.onsuccess = e => {
       db = e.target.result;
       res(db);
     };
-    r.onerror = (e) => rej(e.target.error);
+    req.onerror = e => rej(e.target.error);
   });
 }
 
-// asegura la DB abierta antes de operar
 async function ensureDB() {
-  if (!db) {
-    db = await openDB();
-  }
+  if (!db) db = await openDB();
   try {
-    // intento una transacción dummy para verificar conexión
     db.transaction(STORE_TRABAJOS, 'readonly');
   } catch (err) {
-    console.warn('IndexedDB cerrada -> reabrimos', err);
+    console.warn('Reopening DB due to closed connection', err);
     db = await openDB();
   }
   return db;
 }
 
-/* -----------------------------
-   Helpers IndexedDB (trabajos)
-   ----------------------------- */
+/* ========== 3) IndexedDB helpers ========== */
 async function addLocal(trabajo) {
   await ensureDB();
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_TRABAJOS, 'readwrite');
     const store = tx.objectStore(STORE_TRABAJOS);
     const rq = store.add(trabajo);
-    rq.onsuccess = () => res(rq.result); // id local
-    rq.onerror = (e) => rej(e.target.error);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = e => rej(e.target.error);
   });
 }
 
@@ -95,7 +100,7 @@ async function putLocal(trabajo) {
     const store = tx.objectStore(STORE_TRABAJOS);
     const rq = store.put(trabajo);
     rq.onsuccess = () => res(rq.result);
-    rq.onerror = (e) => rej(e.target.error);
+    rq.onerror = e => rej(e.target.error);
   });
 }
 
@@ -106,7 +111,7 @@ async function deleteLocal(id) {
     const store = tx.objectStore(STORE_TRABAJOS);
     const rq = store.delete(id);
     rq.onsuccess = () => res();
-    rq.onerror = (e) => rej(e.target.error);
+    rq.onerror = e => rej(e.target.error);
   });
 }
 
@@ -117,14 +122,11 @@ async function getAllLocal() {
     const store = tx.objectStore(STORE_TRABAJOS);
     const rq = store.getAll();
     rq.onsuccess = () => res(rq.result || []);
-    rq.onerror = (e) => rej(e.target.error);
+    rq.onerror = e => rej(e.target.error);
   });
 }
 
-/* -----------------------------
-   Outbox (cola de operaciones offline)
-   Cada item: { oid, op: 'add'|'update'|'delete', payload: {...}, localId }
-   ----------------------------- */
+/* ========== 4) Outbox helpers ========== */
 async function addOutbox(item) {
   await ensureDB();
   return new Promise((res, rej) => {
@@ -132,7 +134,7 @@ async function addOutbox(item) {
     const store = tx.objectStore(STORE_OUTBOX);
     const rq = store.add(item);
     rq.onsuccess = () => res(rq.result);
-    rq.onerror = (e) => rej(e.target.error);
+    rq.onerror = e => rej(e.target.error);
   });
 }
 
@@ -143,7 +145,7 @@ async function getOutboxAll() {
     const store = tx.objectStore(STORE_OUTBOX);
     const rq = store.getAll();
     rq.onsuccess = () => res(rq.result || []);
-    rq.onerror = (e) => rej(e.target.error);
+    rq.onerror = e => rej(e.target.error);
   });
 }
 
@@ -154,21 +156,18 @@ async function removeOutbox(oid) {
     const store = tx.objectStore(STORE_OUTBOX);
     const rq = store.delete(oid);
     rq.onsuccess = () => res();
-    rq.onerror = (e) => rej(e.target.error);
+    rq.onerror = e => rej(e.target.error);
   });
 }
 
-/* =============================
-   Firestore helpers
-   ============================= */
+/* ========== 5) Firestore helpers ========== */
 const COLLECTION = 'trabajos';
 
 async function addRemote(trabajo) {
-  // agrega en Firestore y devuelve el id remoto
   const docRef = await firestore.collection(COLLECTION).add({
     ...trabajo,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    client: firebase.auth().currentUser ? firebase.auth().currentUser.uid : null
+    clientId: clientId || null,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
   return docRef.id;
 }
@@ -176,6 +175,7 @@ async function addRemote(trabajo) {
 async function updateRemote(remoteId, trabajo) {
   await firestore.collection(COLLECTION).doc(remoteId).set({
     ...trabajo,
+    clientId: clientId || null,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
 }
@@ -184,22 +184,18 @@ async function deleteRemote(remoteId) {
   await firestore.collection(COLLECTION).doc(remoteId).delete();
 }
 
-/* =============================
-   Sync: procesar outbox cuando hay conexión
-   ============================= */
+/* ========== 6) Process outbox (upload pending ops) ========== */
 async function processOutbox() {
-  // si no hay conexión a Firestore, salimos
   if (!navigator.onLine) return;
   try {
     const out = await getOutboxAll();
     for (const item of out) {
       try {
         if (item.op === 'add') {
-          // añadir remoto y guardar remoteId en local
+          // create remote and store remoteId locally
           const remoteId = await addRemote(item.payload);
-          // actualizar registro local para guardar remoteId
-          const localRec = Object.assign({}, item.payload, { remoteId });
-          // si localId existe, lo ponemos con ese id; si no, guardamos nuevo
+          // update local record with remoteId
+          const localRec = { ...item.payload, remoteId };
           if (item.localId) {
             localRec.id = item.localId;
             await putLocal(localRec);
@@ -211,7 +207,6 @@ async function processOutbox() {
           if (item.payload.remoteId) {
             await updateRemote(item.payload.remoteId, item.payload);
           } else {
-            // si no tiene remoteId -> crear remoto
             const newRemoteId = await addRemote(item.payload);
             item.payload.remoteId = newRemoteId;
             await putLocal(item.payload);
@@ -220,44 +215,109 @@ async function processOutbox() {
           if (item.payload.remoteId) {
             await deleteRemote(item.payload.remoteId);
           }
-          // eliminar local también
           if (item.localId) {
             await deleteLocal(item.localId);
           }
         }
-        // eliminar de outbox
+        // remove processed item
         await removeOutbox(item.oid);
-      } catch (err) {
-        console.warn('Error procesando outbox item', item, err);
-        // Si falla un item, lo dejamos y continuamos con los demás
+      } catch (errItem) {
+        console.warn('Error procesando item outbox', item, errItem);
+        // No eliminar el item si falla; continuar con el siguiente.
       }
     }
   } catch (err) {
-    console.error('Error procesando outbox:', err);
+    console.error('Error procesando outbox', err);
   }
 }
 
-// procesar outbox al volver online
+/* Re-procesar al volver online */
 window.addEventListener('online', () => {
-  console.log('En línea - procesando outbox');
-  processOutbox();
+  console.log('online -> procesando outbox');
+  processOutbox().then(() => console.log('outbox procesado'));
 });
 
-// también al iniciar si hay conexión
-if (navigator.onLine) processOutbox();
+/* ========== 7) Realtime listener: remote -> local ========== */
+/* Evitamos eco verificando clientId (si remote.clientId === clientId -> no aplicar) */
 
-/* =============================
-   Integración con la UI existente
-   (preservamos tu flujo: guardamos local y añadimos outbox)
-   ============================= */
+let unsubscribeRealtime = null;
 
-// elementos DOM (suponiendo tu index.html ya tiene estos ids)
+function startRealtimeListener() {
+  // Solo iniciar si firestore y auth están listos
+  if (!firestore) return;
+  // Si ya hay listener, removerlo
+  if (unsubscribeRealtime) unsubscribeRealtime();
+
+  unsubscribeRealtime = firestore.collection(COLLECTION)
+    .orderBy('createdAt')
+    .onSnapshot(async snapshot => {
+      // procesar cada cambio
+      for (const change of snapshot.docChanges()) {
+        const doc = change.doc;
+        const data = doc.data();
+        const remoteId = doc.id;
+
+        // si el cambio vino de este mismo cliente (mismo clientId) => no aplicar (evita echo)
+        if (data && data.clientId && clientId && data.clientId === clientId) {
+          continue;
+        }
+
+        if (change.type === 'added' || change.type === 'modified') {
+          // mapear campos relevantes
+          const mapped = {
+            remoteId,
+            fecha: data.fecha || '',
+            cliente: data.cliente || '',
+            ubicacion: data.ubicacion || '',
+            superficie: data.superficie || '',
+            unidad: data.unidad || '',
+            insumos: data.insumos || [],
+            recomendacion: data.recomendacion || '',
+            observaciones: data.observaciones || '',
+            createdAt: data.createdAt ? data.createdAt.toMillis ? data.createdAt.toMillis() : Date.now() : Date.now()
+          };
+
+          // buscar si ya existe local con este remoteId
+          const locals = await getAllLocal();
+          const existing = locals.find(l => l.remoteId === remoteId);
+
+          if (existing) {
+            // si existe -> actualizar local
+            mapped.id = existing.id;
+            await putLocal(mapped);
+          } else {
+            // no existe -> agregar local
+            await addLocal(mapped);
+          }
+        } else if (change.type === 'removed') {
+          // si se eliminó remoto, eliminar local que tenga ese remoteId
+          const locals = await getAllLocal();
+          const ext = locals.find(l => l.remoteId === remoteId);
+          if (ext) await deleteLocal(ext.id);
+        }
+      }
+      // finalmente refrescar UI
+      renderTrabajos();
+    }, err => {
+      console.warn('Realtime listener error:', err);
+      // reintentar más tarde si falla
+    });
+}
+
+/* Si auth cambia (clientId aparece), arrancamos listener */
+auth.onAuthStateChanged(user => {
+  if (user) {
+    clientId = user.uid;
+    startRealtimeListener();
+  }
+});
+
+/* ========== 8) UI helpers (conservamos tu estructura) ========== */
 const insumosList = document.getElementById('insumosList');
 const addInsumoBtn = document.getElementById('addInsumo');
 const form = document.getElementById('workForm');
 const trabajosDiv = document.getElementById('trabajos');
 
-// helpers UI (igual que antes; escape/crear filas)
 function createInsumoRow(name = '', litros = '') {
   const div = document.createElement('div');
   div.className = 'insumoRow';
@@ -269,8 +329,6 @@ function createInsumoRow(name = '', litros = '') {
   div.querySelector('.removeInsumo').onclick = () => div.remove();
   insumosList.appendChild(div);
 }
-
-// agregar fila por UI
 addInsumoBtn.addEventListener('click', () => createInsumoRow());
 
 function readInsumosUI() {
@@ -278,7 +336,7 @@ function readInsumosUI() {
   return rows.map(r => ({ producto: r.querySelector('.insumo-nombre').value.trim(), litros: parseFloat(r.querySelector('.insumo-litros').value || 0) })).filter(i => i.producto);
 }
 
-/* Renderizar trabajos desde local (IndexedDB) */
+/* Render desde IndexedDB */
 async function renderTrabajos() {
   const list = await getAllLocal();
   trabajosDiv.innerHTML = '';
@@ -286,26 +344,22 @@ async function renderTrabajos() {
     trabajosDiv.innerHTML = '<p>No hay registros aún.</p>';
     return;
   }
-  list.sort((a,b) => (b.id || 0) - (a.id || 0));
+  list.sort((a,b)=> (b.id || 0) - (a.id || 0));
   list.forEach(t => {
     const el = document.createElement('div');
     el.className = 'trabajoCard';
     el.innerHTML = `
-      <div><strong>${t.fecha}</strong> - ${t.cliente}</div>
-      <div><small>${t.ubicacion || ''}</small></div>
-      <div>
-        <button class="editBtn">Editar</button>
-        <button class="delBtn">Eliminar</button>
-      </div>
+      <div><strong>${escapeHtml(t.fecha)}</strong> - ${escapeHtml(t.cliente)}</div>
+      <div><small>${escapeHtml(t.ubicacion || '')}</small></div>
+      <div><button class="editBtn">Editar</button> <button class="delBtn">Eliminar</button></div>
     `;
     el.querySelector('.editBtn').onclick = () => loadForEdit(t);
     el.querySelector('.delBtn').onclick = async () => {
       if (!confirm('¿Eliminar este trabajo?')) return;
       // eliminar local
       await deleteLocal(t.id);
-      // agregar a outbox para borrar remoto
+      // encolar delete remoto (si tenía remoteId)
       await addOutbox({ op: 'delete', payload: { remoteId: t.remoteId || null }, localId: t.id });
-      // intentar procesar outbox si estamos online
       if (navigator.onLine) await processOutbox();
       await renderTrabajos();
     };
@@ -313,7 +367,7 @@ async function renderTrabajos() {
   });
 }
 
-/* Cargar para editar */
+/* Cargar en form para editar */
 function loadForEdit(t) {
   document.getElementById('editId').value = t.id || '';
   document.getElementById('fecha').value = t.fecha || '';
@@ -327,7 +381,7 @@ function loadForEdit(t) {
   (t.insumos || []).forEach(i => createInsumoRow(i.producto, i.litros));
 }
 
-/* Guardar formulario: primero local + outbox */
+/* Guardar formulario -> local + outbox */
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const idVal = document.getElementById('editId').value;
@@ -345,43 +399,34 @@ form.addEventListener('submit', async (e) => {
 
   try {
     if (idVal) {
-      // actualizar local y poner en outbox 'update'
       trabajo.id = parseInt(idVal);
       await putLocal(trabajo);
       await addOutbox({ op: 'update', payload: trabajo, localId: trabajo.id });
     } else {
-      // nuevo: guardar local y agregar outbox 'add' con localId
       const localId = await addLocal(trabajo);
       await addOutbox({ op: 'add', payload: trabajo, localId });
     }
-
-    // intentar procesar la cola si hay conexión
     if (navigator.onLine) await processOutbox();
-
     form.reset();
     insumosList.innerHTML = '';
     createInsumoRow();
     document.getElementById('editId').value = '';
     await renderTrabajos();
   } catch (err) {
-    console.error('Error guardando trabajo:', err);
+    console.error('Save error:', err);
     alert('Error al guardar: ' + err);
   }
 });
 
 /* Inicialización */
 openDB().then(async () => {
-  // crea una fila por defecto de insumo si no hay
   if (!document.querySelector('#insumosList .insumoRow')) createInsumoRow();
-  // render local
   await renderTrabajos();
-  // procesar outbox en el inicio si estamos online
   if (navigator.onLine) await processOutbox();
+}).catch(err => console.error('openDB failed', err));
 
-  // Opcional: escuchar cambios remotos en Firestore (si querés ver cambios en tiempo real)
-  // firestore.collection(COLLECTION).onSnapshot(snapshot => {
-  //   // aquí podrías aplicar merges de remote -> local si necesitás
-  // });
-}).catch(err => {
-  console.error('No se pudo abrir DB', err);
-});
+/* Util */
+function escapeHtml(str) {
+  if (str === undefined || str === null) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
