@@ -1,0 +1,40 @@
+<!-- ===================================================== -->
+<!-- 🚀 Firebase SDKs -->
+<!-- ===================================================== -->
+
+<!-- Núcleo de Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+
+<!-- Autenticación (por si la necesitas más adelante) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+<!-- Firestore (base de datos en la nube) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<!-- ===================================================== -->
+<!-- ⚙️ Configuración de Firebase -->
+<!-- ===================================================== -->
+<script>
+  // 🔧 Tu configuración de Firebase (reemplazá los valores por los de tu proyecto)
+  const firebaseConfig = {
+    apiKey: "TU_API_KEY",
+    authDomain: "TU_PROYECTO.firebaseapp.com",
+    projectId: "TU_PROYECTO",
+    storageBucket: "TU_PROYECTO.appspot.com",
+    messagingSenderId: "XXXXXXXXXXXX",
+    appId: "1:XXXXXXXXXXXX:web:XXXXXXXXXXXXXX"
+  };
+
+  // Inicializar Firebase
+  firebase.initializeApp(firebaseConfig);
+
+  // Inicializar Firestore
+  const db = firebase.firestore();
+
+  console.log("✅ Firebase inicializado correctamente");
+</script>
+
+<!-- ===================================================== -->
+<!-- 📦 Tu aplicación -->
+<!-- ===================================================== -->
+<script src="app.js"></script>
