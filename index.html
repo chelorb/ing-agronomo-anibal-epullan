@@ -1,40 +1,142 @@
-<!-- ===================================================== -->
-<!-- 🚀 Firebase SDKs -->
-<!-- ===================================================== -->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Registro de Aplicaciones - Ing. Aníbal Epullán</title>
 
-<!-- Núcleo de Firebase -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <!-- ✅ Manifest y meta para PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Registro Agro">
+  <link rel="apple-touch-icon" href="logo-192.png">
 
-<!-- Autenticación (por si la necesitas más adelante) -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <!-- ✅ Estilos -->
+  <link rel="stylesheet" href="styles.css">
 
-<!-- Firestore (base de datos en la nube) -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <!-- ✅ Librerías para exportar -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+</head>
 
-<!-- ===================================================== -->
-<!-- ⚙️ Configuración de Firebase -->
-<!-- ===================================================== -->
-<script>
-  // 🔧 Tu configuración de Firebase (reemplazá los valores por los de tu proyecto)
-  const firebaseConfig = {
-    apiKey: "TU_API_KEY",
-    authDomain: "TU_PROYECTO.firebaseapp.com",
-    projectId: "TU_PROYECTO",
-    storageBucket: "TU_PROYECTO.appspot.com",
-    messagingSenderId: "XXXXXXXXXXXX",
-    appId: "1:XXXXXXXXXXXX:web:XXXXXXXXXXXXXX"
-  };
+<body>
+  <!-- ================================================= -->
+  <!-- 🧭 ENCABEZADO -->
+  <!-- ================================================= -->
+  <header class="topbar">
+    <img src="logo-192.png" alt="logo" id="logo">
+    <div>
+      <h1>Registro de Aplicaciones</h1>
+      <small id="subtitle">Ing. Agrónomo Aníbal Epullán</small><br>
+      <small>Mail: <a href="mailto:Anibalepullan1@gmail.com">Anibalepullan1@gmail.com</a> | Tel: 298 4687873</small>
+    </div>
+  </header>
 
-  // Inicializar Firebase
-  firebase.initializeApp(firebaseConfig);
+  <!-- ================================================= -->
+  <!-- 🧾 FORMULARIO PRINCIPAL -->
+  <!-- ================================================= -->
+  <main class="container">
+    <form id="workForm">
+      <input type="hidden" id="editId" />
 
-  // Inicializar Firestore
-  const db = firebase.firestore();
+      <div class="row">
+        <label>Fecha</label>
+        <input type="date" id="fecha" required />
+      </div>
 
-  console.log("✅ Firebase inicializado correctamente");
-</script>
+      <div class="row">
+        <label>Cliente</label>
+        <input type="text" id="cliente" placeholder="Nombre del cliente" required />
+      </div>
 
-<!-- ===================================================== -->
-<!-- 📦 Tu aplicación -->
-<!-- ===================================================== -->
-<script src="app.js"></script>
+      <div class="row">
+        <label>Ubicación</label>
+        <input type="text" id="ubicacion" placeholder="Dirección / predio / coordenadas" />
+      </div>
+
+      <div class="row">
+        <label>Superficie</label>
+        <input type="number" id="superficie" step="0.01" placeholder="ej: 2.5" />
+        <select id="unidad">
+          <option value="ha">ha</option>
+          <option value="m2">m²</option>
+        </select>
+      </div>
+
+      <fieldset id="insumosField">
+        <legend>Insumos utilizados (producto + litros)</legend>
+        <div id="insumosList"></div>
+        <button type="button" id="addInsumo">+ Agregar insumo</button>
+      </fieldset>
+
+      <div class="row">
+        <label>Recomendación del ingeniero</label>
+        <textarea id="recomendacion" rows="3"></textarea>
+      </div>
+
+      <div class="row">
+        <label>Observaciones</label>
+        <textarea id="observaciones" rows="2"></textarea>
+      </div>
+
+      <div class="actions">
+        <button type="submit">Guardar trabajo</button>
+        <button type="button" id="exportExcel">Exportar Excel</button>
+        <button type="button" id="exportPDF">Exportar PDF</button>
+      </div>
+    </form>
+
+    <section class="list-section">
+      <h2>Trabajos guardados</h2>
+      <div id="trabajos"></div>
+      <button id="borrarTodo" class="danger">Borrar todo</button>
+    </section>
+  </main>
+
+  <!-- ================================================= -->
+  <!-- 🧠 FIREBASE SDK -->
+  <!-- ================================================= -->
+  <!-- SDKs oficiales (modo compatibilidad para uso simple) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    // 🚀 CONFIGURACIÓN DE FIREBASE (reemplazá con los datos de tu proyecto)
+    const firebaseConfig = {
+  apiKey: "AIzaSyDnMeFztVPA0IoP2tABRgd8pD86qBqzWhg",
+  authDomain: "ing-anibal-epullan.firebaseapp.com",
+  projectId: "ing-anibal-epullan",
+  storageBucket: "ing-anibal-epullan.firebasestorage.app",
+  messagingSenderId: "264725993777",
+  appId: "1:264725993777:web:5af48de7b1a634fe72f810",
+  measurementId: "G-TE8JKYLYM9"
+};
+
+    // Inicializa Firebase
+    firebase.initializeApp(firebaseConfig);
+
+    // Inicializa Firestore (base de datos)
+    const db = firebase.firestore();
+
+    console.log("✅ Firebase inicializado correctamente:", firebase.app().name);
+  </script>
+
+  <!-- ================================================= -->
+  <!-- 💾 APP PRINCIPAL -->
+  <!-- ================================================= -->
+  <script src="app.js"></script>
+
+  <!-- ================================================= -->
+  <!-- 🧱 SERVICE WORKER -->
+  <!-- ================================================= -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js')
+      .then(() => console.log("✅ Service Worker registrado correctamente"))
+      .catch(err => console.warn("⚠️ Error registrando el Service Worker:", err));
+    }
+  </script>
+</body>
+</html>
