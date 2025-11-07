@@ -1,142 +1,81 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Registro de Aplicaciones - Ing. Aníbal Epullán</title>
-
-  <!-- ✅ Manifest y meta para PWA -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Registro Agro">
-  <link rel="apple-touch-icon" href="logo-192.png">
-
-  <!-- ✅ Estilos -->
-  <link rel="stylesheet" href="styles.css">
-
-  <!-- ✅ Librerías para exportar -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registro de Aplicaciones | Ing. Agrónomo Aníbal Epullan</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
-  <!-- ================================================= -->
-  <!-- 🧭 ENCABEZADO -->
-  <!-- ================================================= -->
-  <header class="topbar">
-    <img src="logo-192.png" alt="logo" id="logo">
-    <div>
+  <div class="container">
+    <header>
+      <img src="logo-ae.png" alt="Logo AE" class="logo" />
       <h1>Registro de Aplicaciones</h1>
-      <small id="subtitle">Ing. Agrónomo Aníbal Epullán</small><br>
-      <small>Mail: <a href="mailto:Anibalepullan1@gmail.com">Anibalepullan1@gmail.com</a> | Tel: 298 4687873</small>
-    </div>
-  </header>
+      <p>Ing. Agrónomo Aníbal Epullan</p>
+      <p>Email: <a href="mailto:Anibalepullan1@gmail.com">Anibalepullan1@gmail.com</a></p>
+      <p>Teléfono: 298 4687873</p>
+    </header>
 
-  <!-- ================================================= -->
-  <!-- 🧾 FORMULARIO PRINCIPAL -->
-  <!-- ================================================= -->
-  <main class="container">
     <form id="workForm">
       <input type="hidden" id="editId" />
-
-      <div class="row">
-        <label>Fecha</label>
+      <div class="form-group">
+        <label>Fecha:</label>
         <input type="date" id="fecha" required />
       </div>
-
-      <div class="row">
-        <label>Cliente</label>
+      <div class="form-group">
+        <label>Cliente:</label>
         <input type="text" id="cliente" placeholder="Nombre del cliente" required />
       </div>
-
-      <div class="row">
-        <label>Ubicación</label>
-        <input type="text" id="ubicacion" placeholder="Dirección / predio / coordenadas" />
+      <div class="form-group">
+        <label>Ubicación:</label>
+        <input type="text" id="ubicacion" placeholder="Campo / Establecimiento" required />
       </div>
-
-      <div class="row">
-        <label>Superficie</label>
-        <input type="number" id="superficie" step="0.01" placeholder="ej: 2.5" />
+      <div class="form-group">
+        <label>Superficie:</label>
+        <input type="number" id="superficie" step="0.01" required />
         <select id="unidad">
           <option value="ha">ha</option>
-          <option value="m2">m²</option>
+          <option value="m²">m²</option>
         </select>
       </div>
 
-      <fieldset id="insumosField">
-        <legend>Insumos utilizados (producto + litros)</legend>
-        <div id="insumosList"></div>
-        <button type="button" id="addInsumo">+ Agregar insumo</button>
-      </fieldset>
+      <h3>Insumos</h3>
+      <div id="insumosList"></div>
+      <button type="button" id="addInsumo">➕ Agregar Insumo</button>
 
-      <div class="row">
-        <label>Recomendación del ingeniero</label>
-        <textarea id="recomendacion" rows="3"></textarea>
+      <div class="form-group">
+        <label>Recomendación:</label>
+        <textarea id="recomendacion" placeholder="Recomendaciones técnicas"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Observaciones:</label>
+        <textarea id="observaciones" placeholder="Observaciones adicionales"></textarea>
       </div>
 
-      <div class="row">
-        <label>Observaciones</label>
-        <textarea id="observaciones" rows="2"></textarea>
-      </div>
-
-      <div class="actions">
-        <button type="submit">Guardar trabajo</button>
-        <button type="button" id="exportExcel">Exportar Excel</button>
-        <button type="button" id="exportPDF">Exportar PDF</button>
-      </div>
+      <button type="submit" id="guardarBtn">💾 Guardar Registro</button>
     </form>
 
-    <section class="list-section">
-      <h2>Trabajos guardados</h2>
-      <div id="trabajos"></div>
-      <button id="borrarTodo" class="danger">Borrar todo</button>
-    </section>
-  </main>
+    <hr />
 
-  <!-- ================================================= -->
-  <!-- 🧠 FIREBASE SDK -->
-  <!-- ================================================= -->
-  <!-- SDKs oficiales (modo compatibilidad para uso simple) -->
-  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+    <div class="accionesGlobales">
+      <h3>Exportar Registros</h3>
+      <button id="exportPDF">📄 Exportar PDF</button>
+      <button id="exportExcel">📊 Exportar Excel</button>
+    </div>
 
-  <script>
-    // 🚀 CONFIGURACIÓN DE FIREBASE (reemplazá con los datos de tu proyecto)
-    const firebaseConfig = {
-  apiKey: "AIzaSyDnMeFztVPA0IoP2tABRgd8pD86qBqzWhg",
-  authDomain: "ing-anibal-epullan.firebaseapp.com",
-  projectId: "ing-anibal-epullan",
-  storageBucket: "ing-anibal-epullan.firebasestorage.app",
-  messagingSenderId: "264725993777",
-  appId: "1:264725993777:web:5af48de7b1a634fe72f810",
-  measurementId: "G-TE8JKYLYM9"
-};
+    <section id="trabajos"></section>
 
-    // Inicializa Firebase
-    firebase.initializeApp(firebaseConfig);
+    <footer>
+      <p>© 2025 Ing. Agrónomo Aníbal Epullan</p>
+    </footer>
+  </div>
 
-    // Inicializa Firestore (base de datos)
-    const db = firebase.firestore();
+  <!-- Librerías necesarias -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-    console.log("✅ Firebase inicializado correctamente:", firebase.app().name);
-  </script>
-
-  <!-- ================================================= -->
-  <!-- 💾 APP PRINCIPAL -->
-  <!-- ================================================= -->
-  <script src="app.js"></script>
-
-  <!-- ================================================= -->
-  <!-- 🧱 SERVICE WORKER -->
-  <!-- ================================================= -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./service-worker.js')
-      .then(() => console.log("✅ Service Worker registrado correctamente"))
-      .catch(err => console.warn("⚠️ Error registrando el Service Worker:", err));
-    }
-  </script>
+  <!-- Tu script principal -->
+  <script type="module" src="app.js"></script>
 </body>
 </html>

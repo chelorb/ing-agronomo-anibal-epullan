@@ -1,0 +1,13 @@
+{
+  "name": "Servicios Agropecuarios Epullan",
+  "short_name": "EpullanApp",
+  "description": "Registro de aplicaciones agrícolas - Ing. Agrónomo Anibal Epullan",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2b8a3e",
+  "icons": [
+    { "src": "logo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "logo-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
