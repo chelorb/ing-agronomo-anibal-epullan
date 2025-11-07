@@ -250,3 +250,16 @@ exportExcelBtn.onclick = async () => {
 // --- Inicialización ---
 createInsumoRow();
 renderTrabajos();
+
+
+(async () => {
+  try {
+    const testRef = await addDoc(collection(db, "testCollection"), {
+      mensaje: "Conexión correcta",
+      fecha: new Date().toISOString()
+    });
+    console.log("✅ Firestore funcionando. ID:", testRef.id);
+  } catch (error) {
+    console.error("❌ Error de conexión con Firestore:", error);
+  }
+})();
